@@ -1,0 +1,28 @@
+---
+- name: Add gems for sidekiq
+  lineinfile:
+    dest: "{{ project.dir }}/Gemfile"
+    regexp: "{{ item.regexp }}"
+    line: "{{ item.line }}"
+  with_items:
+    - regexp: "^gem 'sidekiq'"
+      line: "gem 'sidekiq'"
+    - regexp: "^gem 'sidekiq-scheduler'"
+      line: "gem 'sidekiq-scheduler'"
+    - regexp: "^gem 'redis-namespace'"
+      line: "gem 'redis-namespace'"
+
+- name: Install gems for sidekiq
+  bundler:
+    state: present
+    chdir: "{{ project.dir }}"
+
+- name: Copy config/sidekiq.yml
+  copy:
+    src: config/sidekiq.yml
+    dest: "{{ project.dir }}/config/sidekiq.yml"
+
+- name: Copy config/initializers/sidekiq.rb
+  copy:
+    src: config/initializers/sidekiq.rb
+    dest: "{{ project.dir }}/config/initializers/sidekiq.rb"

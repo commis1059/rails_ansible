@@ -1,0 +1,10 @@
+---
+- name: Copy my.cnf
+  template:
+    src: etc/mysql/conf.d/my.cnf
+    dest: "{{ project.dir }}/etc/mysql/conf.d/"
+
+- name: Copy docker-compose.yml
+  template:
+    src: docker-compose.yml
+    dest: "{{ project.dir }}"

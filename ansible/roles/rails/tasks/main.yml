@@ -1,0 +1,180 @@
+---
+- name: Set Ruby version
+  copy:
+    dest: "{{ project.dir }}/.ruby-version"
+    content: |
+      {{ ruby.version }}
+
+- name: Set Node.js version
+  copy:
+    dest: "{{ project.dir }}/.node-version"
+    content: |
+      {{ node.version }}
+
+- name: Create /tmp/Gemfile
+  copy:
+    dest: /tmp/Gemfile
+    content: |
+      # frozen_string_literal: true
+
+      source "https://rubygems.org"
+
+      git_source(:github) {|repo_name| "https://github.com/#{repo_name}" }
+
+      # gem "rails"
+      gem 'rails', '~> 6.0.x'
+      gem 'webpacker', '~> 4.x'
+    force: yes
+
+- name: Create .bundle/config directory
+  file:
+    path: "{{ project.dir }}/.bundle"
+    state: directory
+
+- name: Configure Bundler
+  copy:
+    dest: "{{ project.dir }}/.bundle/config"
+    content: |
+      ---
+      BUNDLE_JOBS: "2"
+      BUNDLE_BUILD__MYSQL2: "--with-ldflags=-L/usr/local/opt/openssl/lib"
+      BUNDLE_WITHOUT: "production"
+    force: no
+
+- name: Install Rails
+  bundler:
+    state: present
+    chdir: "{{ project.dir }}"
+    gemfile: /tmp/Gemfile
+
+- name: Have you already initialized a Rails project?
+  stat:
+    path: "{{ project.dir }}/Gemfile.lock"
+  register: rails_project_initialized
+
+- block:
+  - name: Initialize a Rails project
+    command: bundle exec rails new . --api -d mysql -T -f
+    args:
+      chdir: "{{ project.dir }}"
+    environment:
+      BUNDLE_GEMFILE: /tmp/Gemfile
+
+  - name: Fetch .gitignore
+    get_url:
+      url: https://www.gitignore.io/api/osx,rails,jetbrains
+      dest: "{{ project.dir }}/.gitignore"
+      force: yes
+
+  - name: Copy .env
+    copy:
+      src: .env
+      dest: "{{ project.dir }}/.env"
+
+  when: not rails_project_initialized.stat.exists
+
+- name: Copy database.yml
+  template:
+    src: config/database.yml
+    dest: "{{ project.dir }}/config"
+
+- name: Add dotenv-rails
+  lineinfile:
+    dest: "{{ project.dir }}/Gemfile"
+    regexp: "^gem 'dotenv-rails'"
+    line: "gem 'dotenv-rails', groups: %i[development test]"
+
+- name: Add rubocop
+  lineinfile:
+    dest: "{{ project.dir }}/Gemfile"
+    regexp: "{{ item.regexp }}"
+    line: "{{ item.line }}"
+  with_items:
+    - regexp: "^gem 'rubocop'"
+      line: "gem 'rubocop', groups: %i[development test], require: false"
+    - regexp: "^gem 'rubocop-rails'"
+      line: "gem 'rubocop-rails', groups: %i[development test], require: false"
+
+- name: Add Rspec
+  lineinfile:
+    dest: "{{ project.dir }}/Gemfile"
+    regexp: "{{ item.regexp }}"
+    line: "{{ item.line }}"
+  with_items:
+    - regexp: "^gem 'rspec-rails'"
+      line: "gem 'rspec-rails', groups: %i[test]"
+    - regexp: "^gem 'rspec-its'"
+      line: "gem 'rspec-its', groups: %i[test]"
+    - regexp: "^gem 'factory_bot_rails'"
+      line: "gem 'factory_bot_rails', groups: %i[test]"
+
+- name: Add Bullet
+  lineinfile:
+    dest: "{{ project.dir }}/Gemfile"
+    regexp: "^gem 'bullet'"
+    line: "gem 'bullet', groups: %i[development]"
+
+- name: Install added gems
+  bundler:
+    state: present
+    chdir: "{{ project.dir }}"
+
+- name: Install RSpec
+  command: bin/rails g rspec:install
+  args:
+    chdir: "{{ project.dir }}"
+
+- name: Add require to configure RSpec
+  lineinfile:
+    dest: "{{ project.dir }}/spec/spec_helper.rb"
+    regexp: "{{ item.regexp }}"
+    line: "{{ item.line }}"
+    insertbefore: BOF
+  with_items:
+    - regexp: "^require 'factory_bot'"
+      line: "require 'factory_bot'"
+    - regexp: "^require 'active_support/testing/time_helpers'"
+      line: "require 'active_support/testing/time_helpers'"
+
+- name: Configure RSpec
+  lineinfile:
+    dest: "{{ project.dir }}/spec/spec_helper.rb"
+    regexp: "{{ item.regexp }}"
+    line: "{{ item.line }}"
+    insertbefore: "^end"
+  with_items:
+    - regexp: "config.include ActiveSupport::Testing::TimeHelpers"
+      line: "  config.include ActiveSupport::Testing::TimeHelpers"
+    - regexp: "config.include FactoryBot::Syntax::Methods"
+      line: "  config.include FactoryBot::Syntax::Methods"
+
+- name: Configure Bullet
+  blockinfile:
+    dest: "{{ project.dir }}/config/environments/development.rb"
+    insertbefore: "^end"
+    marker: "  # {mark} ANSIBLE MANAGED BLOCK for Bullet"
+    block: |2
+        config.after_initialize do
+          Bullet.enable = true
+          Bullet.rails_logger = true
+        end
+
+- name: Copy config/initializers/generators.rb
+  copy:
+    dest: "{{ project.dir }}/config/initializers/generators.rb"
+    content: |
+      # frozen_string_literal: true
+
+      Rails.application.config.generators do |g|
+        g.helper false
+        g.test_framework :rspec, view_specs: false, controller_specs: false, fixture: true
+        g.fixture_replacement :factory_bot, dir: 'spec/factories'
+        g.stylesheets = false
+        g.javascripts = false
+      end
+    force: no
+
+- name: Copy bin/setup
+  copy:
+    src: bin/setup
+    dest: "{{ project.dir }}/bin/setup"

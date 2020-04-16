@@ -1,0 +1,48 @@
+---
+#- name: Install @vue/cli
+#  command: yarn global add @vue/cli@4.2.3 @vue/cli-service-global@4.2.3
+#  args:
+#    chdir: "{{ project.dir }}"
+
+- name: Create preset.json for Vue CLI
+  copy:
+    dest: /tmp/preset.json
+    content: |
+      {
+        "useConfigFiles": true,
+        "plugins": {
+          "@vue/cli-plugin-babel": {},
+          "@vue/cli-plugin-router": {
+            "historyMode": true
+          },
+          "@vue/cli-plugin-eslint": {
+            "config": "prettier",
+            "lintOn": [
+              "save"
+            ]
+          },
+          "@vue/cli-plugin-unit-jest": {}
+        },
+        "cssPreprocessor": "node-sass"
+      }
+    force: yes
+
+- name: Have you already initialized a Vue project?
+  stat:
+    path: "{{ project.dir }}/frontend"
+  register: vue_project_initialized
+
+- block:
+  - name: Initialize a Vue project
+    command: vue create --preset /tmp frontend
+    args:
+      chdir: "{{ project.dir }}"
+
+  - name: Commit Vue project initialization
+    shell: >
+      git add .;
+      git commit -m "Add frontend project";
+    args:
+      chdir: "{{ project.dir }}"
+
+  when: not vue_project_initialized.stat.exists
